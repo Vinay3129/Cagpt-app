@@ -1,10 +1,13 @@
+# backend/requirements.txt
 fastapi
 uvicorn
-langchain
 langchain-community
-llama-cpp-python
-PyMuPDF
 faiss-cpu
 sentence-transformers
 torch
 pydantic
+groq
+python-dotenv
+requests
+tqdm
+boto3

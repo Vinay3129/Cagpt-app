@@ -1,69 +1,86 @@
 # backend/rag_utils.py
+import os
+import boto3
+from botocore.client import Config
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.document_loaders import PyMuPDFLoader, TextLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-import os
+import tempfile
+from dotenv import load_dotenv
 
-def load_documents_from_directory(directory_path: str):
-    """
-    Loads documents from a directory, assigning the subfolder name as the 'subject' metadata.
-    Supports .pdf and .txt files.
-    """
-    all_docs = []
+load_dotenv()
+
+def get_r2_client():
+    """Initializes and returns the Boto3 client for Cloudflare R2."""
+    account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID")
+    access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
+    secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
     
-    # Walk through the directory
-    for folder_name in os.listdir(directory_path):
-        subject_path = os.path.join(directory_path, folder_name)
-        
-        # Ensure it's a directory
-        if os.path.isdir(subject_path):
-            subject = folder_name # The subject is the name of the folder
-            
-            # Iterate over files in the subject folder
-            for filename in os.listdir(subject_path):
-                file_path = os.path.join(subject_path, filename)
-                
-                # Use the appropriate loader based on file extension
-                if filename.endswith(".pdf"):
-                    loader = PyMuPDFLoader(file_path)
-                elif filename.endswith(".txt"):
-                    loader = TextLoader(file_path, encoding='utf-8')
-                else:
-                    continue # Skip unsupported file types
-                
-                print(f"📄 Loading: {filename} (Subject: {subject})")
-                docs = loader.load()
-                
-                # Add subject metadata to each document
-                for doc in docs:
-                    doc.metadata['subject'] = subject
-                
-                all_docs.extend(docs)
-                
+    endpoint_url = f"https://{account_id}.r2.cloudflarestorage.com"
+    
+    s3_client = boto3.client(
+        's3',
+        endpoint_url=endpoint_url,
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=secret_access_key,
+        config=Config(signature_version='s3v4')
+    )
+    return s3_client
+
+def list_and_download_files(client, bucket_name, temp_dir):
+    """Lists and downloads all files from the R2 bucket."""
+    all_docs = []
+    paginator = client.get_paginator('list_objects_v2')
+    pages = paginator.paginate(Bucket=bucket_name)
+
+    for page in pages:
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                file_key = obj['Key']
+                # Skip folders/directories
+                if file_key.endswith('/'):
+                    continue
+
+                print(f"Downloading: {file_key}")
+                local_file_path = os.path.join(temp_dir, os.path.basename(file_key))
+                client.download_file(bucket_name, file_key, local_file_path)
+
+                # Determine subject from folder structure
+                subject = file_key.split('/')[0]
+
+                if file_key.endswith(".pdf"):
+                    loader = PyMuPDFLoader(local_file_path)
+                    docs = loader.load()
+                    for doc in docs:
+                        doc.metadata['subject'] = subject
+                    all_docs.extend(docs)
+                # Add logic for other file types like .txt here if needed
     return all_docs
 
-def prepare_vectorstore(data_directory: str):
+def prepare_vectorstore():
     """
-    Prepares the FAISS vector store from documents in the data directory.
+    Prepares the FAISS vector store by automatically discovering and downloading
+    documents from the Cloudflare R2 bucket.
     """
-    # Load all documents with metadata
-    docs = load_documents_from_directory(data_directory)
-    
-    if not docs:
-        print("⚠️ No documents found. Please check the data directory.")
+    bucket_name = os.getenv("R2_BUCKET_NAME")
+    if not bucket_name:
+        print("❌ R2_BUCKET_NAME not set in .env file.")
         return None
 
-    # Split documents into chunks
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    chunks = splitter.split_documents(docs)
+    r2_client = get_r2_client()
 
-    # Create embeddings
+    with tempfile.TemporaryDirectory() as temp_dir:
+        all_docs = list_and_download_files(r2_client, bucket_name, temp_dir)
+
+    if not all_docs:
+        print("⚠️ No documents were loaded. Vector store cannot be created.")
+        return None
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    chunks = splitter.split_documents(all_docs)
+
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    
-    # Create FAISS vector store from the chunks
-    print("🧠 Creating vector store from documents...")
     db = FAISS.from_documents(chunks, embeddings)
-    print("✅ Vector store created successfully.")
-    
+    print("✅ Vector DB ready.")
     return db
