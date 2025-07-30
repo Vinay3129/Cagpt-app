@@ -1,47 +1,45 @@
 # backend/server.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from rag_utils import prepare_vectorstore
+from .rag_utils import prepare_vectorstore
 from groq import Groq
 import os
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
-# Load environment variables from .env file
-load_dotenv()
+# --- Updated Loading Logic ---
+print("--- Forcing .env load from explicit path ---")
+# Build the absolute path to the .env file located in the same directory as this script
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 
-app = FastAPI()
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
-)
+# Load the .env file using the explicit path
+load_dotenv(dotenv_path=dotenv_path)
 
-# Global variables to hold the database and AI client
-db = None
-groq_client = None
 
-@app.on_event("startup")
-def startup_event():
-    """
-    On startup, prepare the vector store and initialize the Groq client.
-    """
-    global db, groq_client
-
-    # The prepare_vectorstore function now handles everything automatically
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Application startup...")
     print("⏳ Preparing vector store from cloud documents...")
-    db = prepare_vectorstore()
-    
-    # The rest of the function stays the same
-    if db:
+    app.state.db = prepare_vectorstore()
+    if app.state.db:
         print("✅ Vector DB ready.")
     else:
         print("❌ Vector DB could not be initialized.")
 
-    # Initialize Groq client from the API key in the .env file
     groq_api_key = os.getenv("GROQ_API_KEY")
     if groq_api_key:
-        groq_client = Groq(api_key=groq_api_key)
+        app.state.groq_client = Groq(api_key=groq_api_key)
         print("✅ Groq client ready.")
     else:
-        print("❌ GROQ_API_KEY not found. Please set it in the .env file.")
+        print("❌ GROQ_API_KEY not found.")
+    
+    yield
+    print("Application shutdown.")
+
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+)
 
 @app.get("/")
 async def root():
@@ -49,22 +47,16 @@ async def root():
 
 @app.get("/ask/")
 async def ask_question(q: str):
-    """
-    Endpoint to ask a question. It retrieves context from the vector store
-    and generates an answer using the Groq API.
-    """
-    if not db or not groq_client:
+    if not hasattr(app.state, 'db') or not app.state.db or not hasattr(app.state, 'groq_client') or not app.state.groq_client:
         return {"error": "System is not ready. Please check server logs."}
 
     print(f"🔍 Searching for context for: {q}")
-    # 1. Retrieve relevant documents from the vector store
-    retrieved_docs = db.similarity_search(q, k=3) # Get top 3 most relevant chunks
+    retrieved_docs = app.state.db.similarity_search(q, k=3)
     context = "\n\n".join([doc.page_content for doc in retrieved_docs])
 
     print("🧠 Generating answer with Groq...")
-    # 2. Generate an answer using the context
     try:
-        chat_completion = groq_client.chat.completions.create(
+        chat_completion = app.state.groq_client.chat.completions.create(
             messages=[
                 {
                     "role": "system",
@@ -81,12 +73,11 @@ async def ask_question(q: str):
                     "content": q,
                 }
             ],
-            model="llama3-8b-8192", # Using Llama3 8B model on Groq
+            model="llama3-8b-8192",
             temperature=0.2,
         )
         answer = chat_completion.choices[0].message.content
         return {"response": answer}
-
     except Exception as e:
         print(f"Error calling Groq API: {e}")
         return {"error": "Failed to generate answer from AI model."}

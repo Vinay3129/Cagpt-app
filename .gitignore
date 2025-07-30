@@ -82,3 +82,5 @@ android-sdk/
 # Large files - Do not commit models or large datasets
 backend/models/
 backend/data/
+
+.env
