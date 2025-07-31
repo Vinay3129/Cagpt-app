@@ -1,4 +1,3 @@
-// frontend/src/components/ChatInterface.js
 import React, { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
 import axios from 'axios';
@@ -35,20 +34,15 @@ const Textarea = React.forwardRef(({ className = '', ...props }, ref) => (
   />
 ));
 
-
-const ChatInterface = ({ onToggleSidebar, currentChatId }) => {
+const ChatInterface = ({ onToggleSidebar, currentChatId, selectedSubject }) => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSend = async () => {
@@ -67,16 +61,18 @@ const ChatInterface = ({ onToggleSidebar, currentChatId }) => {
 
     try {
       const response = await axios.get('http://127.0.0.1:8000/ask/', {
-        params: { q: userMessage.content }
+        params: { 
+          q: userMessage.content,
+          subject: selectedSubject
+        }
       });
       
       const botResponse = {
         id: Date.now().toString() + "-bot",
         type: 'bot',
         content: response.data.response || "Sorry, I couldn't get a response.",
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString() // <-- This is the corrected line
       };
-
       setMessages(prev => [...prev, botResponse]);
 
     } catch (error) {
@@ -84,7 +80,7 @@ const ChatInterface = ({ onToggleSidebar, currentChatId }) => {
       const errorMessage = {
         id: Date.now().toString() + "-error",
         type: 'bot',
-        content: 'Sorry, I encountered an error connecting to the AI. Please make sure the backend server is running.',
+        content: 'Sorry, I encountered an error. Please try again.',
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -103,6 +99,7 @@ const ChatInterface = ({ onToggleSidebar, currentChatId }) => {
   
   const handleInputChange = (e) => {
     setInputValue(e.target.value);
+    
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = 'auto';
@@ -111,21 +108,7 @@ const ChatInterface = ({ onToggleSidebar, currentChatId }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 relative overflow-hidden">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(50)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${2 + Math.random() * 2}s`
-            }}
-          />
-        ))}
-      </div>
+    <div className="flex flex-col h-full bg-zinc-950 relative overflow-hidden">
       <div className="flex items-center justify-between p-4 border-b border-zinc-800/50 bg-zinc-950/80 backdrop-blur-xl z-10">
         <div className="flex items-center space-x-3">
           <Button variant="ghost" size="sm" onClick={onToggleSidebar} className="lg:hidden text-zinc-400 hover:text-white" >
