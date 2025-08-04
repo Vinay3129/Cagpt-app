@@ -1,40 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
 import axios from 'axios';
-import { Send, Loader2, Menu } from 'lucide-react';
-
-const Button = ({ children, className = '', onClick, variant = 'default', size = 'default', ...props }) => {
-  const baseClasses = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
-  const variants = {
-    default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-    ghost: 'hover:bg-accent hover:text-accent-foreground',
-    outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground'
-  };
-  const sizes = {
-    default: 'h-10 px-4 py-2',
-    sm: 'h-9 rounded-md px-3',
-    icon: 'h-10 w-10'
-  };
-  return (
-    <button
-      className={`${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`}
-      onClick={onClick}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-};
+import { Send, Loader2, Calculator, Plus, Mic } from 'lucide-react';
 
 const Textarea = React.forwardRef(({ className = '', ...props }, ref) => (
   <textarea
     ref={ref}
-    className={`flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    className={`flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     {...props}
   />
 ));
 
-const ChatInterface = ({ onToggleSidebar, currentChatId, selectedSubject }) => {
+const ChatInterface = ({ currentChatId, setCurrentChatId, selectedSubject, onNewChatCreated }) => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -45,48 +22,61 @@ const ChatInterface = ({ onToggleSidebar, currentChatId, selectedSubject }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    const fetchMessages = async () => {
+      if (!currentChatId) {
+        setMessages([]);
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const response = await axios.get(`http://127.0.0.1:8000/chats/${currentChatId}/messages`);
+        setMessages(response.data);
+      } catch (error) {
+        console.error("Failed to fetch messages:", error);
+        setMessages([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchMessages();
+  }, [currentChatId]);
+
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
-
-    const userMessage = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: inputValue.trim(),
-      timestamp: new Date().toISOString()
+    const userMessageContent = inputValue.trim();
+    const isNewChat = !currentChatId;
+    const optimisticUserMessage = {
+      id: Date.now(), role: 'user', content: userMessageContent, timestamp: new Date().toISOString()
     };
-    
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => [...prev, optimisticUserMessage]);
     setInputValue('');
     setIsLoading(true);
-
     try {
-      const response = await axios.get('http://127.0.0.1:8000/ask/', {
-        params: { 
-          q: userMessage.content,
-          subject: selectedSubject
-        }
+      const response = await axios.post('http://127.0.0.1:8000/ask/', {
+        q: userMessageContent, chat_id: currentChatId, subject: selectedSubject
       });
-      
-      const botResponse = {
-        id: Date.now().toString() + "-bot",
-        type: 'bot',
-        content: response.data.response || "Sorry, I couldn't get a response.",
-        timestamp: new Date().toISOString() // <-- This is the corrected line
-      };
-      setMessages(prev => [...prev, botResponse]);
-
+      const newChatId = response.data.chat_id;
+      if (isNewChat) {
+        onNewChatCreated(newChatId);
+      } else {
+        const messagesResponse = await axios.get(`http://127.0.0.1:8000/chats/${currentChatId}/messages`);
+        setMessages(messagesResponse.data);
+      }
     } catch (error) {
       console.error('Error getting bot response:', error);
-      const errorMessage = {
-        id: Date.now().toString() + "-error",
-        type: 'bot',
-        content: 'Sorry, I encountered an error. Please try again.',
-        timestamp: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-      textareaRef.current.focus();
+      textareaRef.current?.focus();
+    }
+  };
+  
+  const handleInputChange = (e) => {
+    setInputValue(e.target.value);
+    const textarea = textareaRef.current;
+    if (textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = `${textarea.scrollHeight}px`;
     }
   };
 
@@ -96,113 +86,89 @@ const ChatInterface = ({ onToggleSidebar, currentChatId, selectedSubject }) => {
       handleSend();
     }
   };
-  
-  const handleInputChange = (e) => {
-    setInputValue(e.target.value);
-    
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
-    }
-  };
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950 relative overflow-hidden">
-      <div className="flex items-center justify-between p-4 border-b border-zinc-800/50 bg-zinc-950/80 backdrop-blur-xl z-10">
-        <div className="flex items-center space-x-3">
-          <Button variant="ghost" size="sm" onClick={onToggleSidebar} className="lg:hidden text-zinc-400 hover:text-white" >
-            <Menu className="w-5 h-5" />
-          </Button>
-          <div>
-            <h2 className="text-lg font-semibold text-white">CA Study Chat</h2>
-            <p className="text-sm text-zinc-400">Ask anything about CA syllabus</p>
-          </div>
-        </div>
+    <div className="flex flex-col flex-1 h-screen bg-background">
+      <div className="flex items-center p-4 h-[65px] shrink-0">
+        <h2 className="text-lg font-semibold text-text-primary">CAgpt</h2>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-6 z-10 custom-scrollbar">
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl font-bold text-white">CA</span>
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2">Welcome to CAgpt</h3>
-              <p className="text-zinc-400 mb-6 max-w-md">
-                Your intelligent CA study companion. Ask questions about taxation, accounting, audit, law, and more.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-lg mx-auto">
-                {[
-                  'Explain Section 44AD provisions',
-                  'What is depreciation under Companies Act?',
-                  'GST return filing due dates',
-                  'Audit standards under SA 700'
-                ].map((suggestion, index) => (
-                  <Button
-                    key={index}
-                    variant="outline"
-                    onClick={() => setInputValue(suggestion)}
-                    className="text-left justify-start border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-600 rounded-lg p-3 h-auto"
-                  >
-                    {suggestion}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="max-w-4xl mx-auto">
-            {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                isUser={message.type === 'user'}
-              />
-            ))}
+
+      <div className="flex-1 flex flex-col items-center overflow-y-auto">
+        <div className="w-full max-w-4xl p-6 flex-1 custom-scrollbar">
+            <div className="space-y-6">
+            {messages.length === 0 && !isLoading ? (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="w-16 h-16 bg-accent rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Calculator className="w-8 h-8 text-white" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-text-primary mb-2">CA Study Assistant</h3>
+                    <p className="text-text-secondary mb-6 max-w-md">
+                        Start a conversation by typing below, or use the sidebar to see past chats.
+                    </p>
+                </div>
+            ) : (
+                messages.map((message) => (
+                <MessageBubble
+                    key={message.id}
+                    message={message}
+                    isUser={message.role === 'user'}
+                />
+                ))
+            )}
             {isLoading && (
-              <div className="flex items-start space-x-4 mb-6">
-                  <div className="w-8 h-8 bg-zinc-800 rounded-full flex items-center justify-center">
-                  <span className="text-sm font-medium text-zinc-300">CA</span>
+                <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
+                    <Calculator className="w-4 h-4 text-text-primary animate-pulse" />
                 </div>
-                <div className="bg-zinc-800/80 rounded-2xl rounded-bl-md px-4 py-3">
-                  <div className="flex items-center space-x-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
-                    <span className="text-sm text-zinc-400">Thinking...</span>
-                  </div>
+                <div className="p-3 rounded-2xl bg-primary rounded-bl-none">
+                    <div className="text-sm text-text-primary">Thinking...</div>
                 </div>
-              </div>
+                </div>
             )}
             <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
-      <div className="p-4 border-t border-zinc-800/50 bg-zinc-950/80 backdrop-blur-xl z-10">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-end space-x-3">
-            <div className="flex-1 relative">
-              <Textarea
-                ref={textareaRef}
-                value={inputValue}
-                onChange={handleInputChange}
-                onKeyPress={handleKeyPress}
-                placeholder="Ask anything about CA syllabus..."
-                className="min-h-[48px] max-h-[120px] resize-none bg-zinc-900/50 border-zinc-700 text-white placeholder-zinc-400 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-12"
-                disabled={isLoading}
-              />
-              {inputValue.trim() && !isLoading && (
-                <button
-                  onClick={handleSend}
-                  disabled={isLoading}
-                  className="absolute right-2 bottom-2 h-8 w-8 p-0 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 rounded-lg flex items-center justify-center"
-                >
-                  <Send className="w-4 h-4 text-white" />
-                </button>
-              )}
             </div>
-          </div>
-          <p className="text-xs text-zinc-500 mt-2 text-center">
-            CAgpt can make mistakes. Consider checking important information.
-          </p>
+        </div>
+        
+        <div className="w-full max-w-4xl p-4 shrink-0">
+            <form
+                onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+                className="flex items-end p-2 space-x-2 bg-primary border border-border rounded-2xl"
+            >
+                {/* --- THIS IS THE UPDATED SECTION --- */}
+                <button
+                    type="button"
+                    title="Attach file"
+                    className="p-2 text-text-secondary hover:text-text-primary transition-colors rounded-full shrink-0"
+                >
+                    <Plus className="w-4 h-4" />
+                </button>
+                <Textarea
+                    ref={textareaRef}
+                    value={inputValue}
+                    onChange={handleInputChange}
+                    onKeyPress={handleKeyPress}
+                    placeholder="Ask anything..."
+                    className="flex-1 w-full text-text-primary placeholder:text-text-secondary resize-none min-h-[24px] max-h-40 bg-transparent border-none focus:outline-none focus:ring-0"
+                    rows={1}
+                />
+                <button
+                    type="button"
+                    title="Use voice"
+                    className="p-2 text-text-secondary hover:text-text-primary transition-colors rounded-full shrink-0"
+                >
+                    <Mic className="w-4 h-4" />
+                </button>
+                <button
+                    type="submit"
+                    disabled={isLoading || !inputValue.trim()}
+                    className="inline-flex items-center justify-center w-8 h-8 text-white transition-colors rounded-full bg-accent hover:opacity-90 disabled:bg-zinc-600 disabled:cursor-not-allowed shrink-0"
+                >
+                    <Send className="w-4 h-4" />
+                </button>
+            </form>
+            <p className="text-xs text-text-secondary mt-2 text-center">
+                CAgpt can make mistakes. Consider checking important information.
+            </p>
         </div>
       </div>
     </div>

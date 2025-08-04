@@ -6,8 +6,10 @@ faiss-cpu
 sentence-transformers
 torch
 pydantic
-groq
 python-dotenv
 requests
 tqdm
 boto3
+groq
+sqlalchemy
+aiosqlite

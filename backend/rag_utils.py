@@ -1,3 +1,16 @@
+import logging
+import sys
+
+# --- Start of Verbose Logging Setup ---
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logging.getLogger('huggingface_hub').setLevel(logging.INFO)
+logging.getLogger('sentence_transformers').setLevel(logging.INFO)
+# --- End of Verbose Logging Setup ---
+
 import os
 import boto3
 from botocore.client import Config
@@ -74,10 +87,11 @@ def prepare_vectorstore():
         print("⚠️ No documents were loaded. Vector store cannot be created.")
         return None, []
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    # Using smaller, more focused chunks
+    splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=100)
     chunks = splitter.split_documents(all_docs)
 
-    print("🧠 Creating embeddings... (This may take several minutes)")
+    print("🧠 Creating embeddings... (This may take several minutes with the new settings)")
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     db = FAISS.from_documents(chunks, embeddings)
     print("✅ Vector DB ready.")
