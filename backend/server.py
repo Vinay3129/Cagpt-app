@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.orm import selectinload
 from .database import SessionLocal, Chat, Message, init_db
 from .rag_utils import prepare_vectorstore
@@ -22,6 +22,9 @@ class AskRequest(BaseModel):
     q: str
     chat_id: Optional[int] = None
     subject: str = "All Subjects"
+
+class RenameRequest(BaseModel):
+    title: str
 
 # --- MANUAL .ENV LOADER ---
 def load_env_manual():
@@ -83,19 +86,10 @@ async def root():
 # --- CHAT HISTORY ENDPOINTS ---
 @app.get("/chats", response_model=List[ChatResponse])
 async def get_chat_history(db: AsyncSession = Depends(get_db)):
-    stmt = select(Chat).options(selectinload(Chat.messages)).order_by(Chat.created_at.desc())
+    stmt = select(Chat).order_by(Chat.created_at.desc())
     result = await db.execute(stmt)
-    chats = result.scalars().unique().all()
-    
-    chat_list = []
-    for chat in chats:
-        title = "New Chat"
-        if chat.messages and len(chat.messages) > 0:
-            title = chat.messages[0].content
-        else:
-            title = f"Chat from {chat.created_at.strftime('%Y-%m-%d %H:%M')}"
-        chat_list.append({"id": chat.id, "created_at": str(chat.created_at), "title": title})
-    return chat_list
+    chats = result.scalars().all()
+    return [{"id": chat.id, "created_at": str(chat.created_at), "title": chat.title} for chat in chats]
 
 @app.post("/chats/new")
 async def create_new_chat(db: AsyncSession = Depends(get_db)):
@@ -110,6 +104,13 @@ async def get_messages_for_chat(chat_id: int, db: AsyncSession = Depends(get_db)
     result = await db.execute(select(Message).where(Message.chat_id == chat_id).order_by(Message.timestamp.asc()))
     messages = result.scalars().all()
     return messages
+
+@app.patch("/chats/{chat_id}/rename")
+async def rename_chat(chat_id: int, request: RenameRequest, db: AsyncSession = Depends(get_db)):
+    stmt = update(Chat).where(Chat.id == chat_id).values(title=request.title)
+    await db.execute(stmt)
+    await db.commit()
+    return {"message": "Chat renamed successfully"}
 
 @app.delete("/chats/{chat_id}")
 async def delete_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
@@ -131,15 +132,21 @@ async def get_subjects():
 async def ask_question(request: AskRequest, db: AsyncSession = Depends(get_db)):
     if not hasattr(app.state, 'db') or not app.state.db or not hasattr(app.state, 'groq_client') or not app.state.groq_client:
         return {"error": "System is not ready."}
+    
+    is_new_chat = False
     if not request.chat_id:
-        new_chat = Chat()
+        is_new_chat = True
+        # Use the first question as the default title for a new chat
+        new_chat = Chat(title=request.q[:50]) # Truncate title to 50 chars
         db.add(new_chat)
         await db.commit()
         await db.refresh(new_chat)
         request.chat_id = new_chat.id
+        
     user_message = Message(chat_id=request.chat_id, role="user", content=request.q)
     db.add(user_message)
     await db.commit()
+
     print(f"🔍 Searching for context for: '{request.q}' in subject: '{request.subject}'")
     search_kwargs = {'k': 6}
     if request.subject != "All Subjects":
@@ -150,7 +157,7 @@ async def ask_question(request: AskRequest, db: AsyncSession = Depends(get_db)):
     if retrieved_docs:
         print("🧠 Generating answer with Groq...")
         try:
-            # --- THIS IS THE FULL, DETAILED PROMPT ---
+            # --- THIS IS THE FULL, HIGH-QUALITY PROMPT ---
             system_prompt = (
                 "ROLE: You are CAgpt, an expert AI tutor for Chartered Accountancy students. Your goal is to teach complex subjects in a simple, clear, and encouraging way.\n\n"
                 "INSTRUCTIONS:\n"
@@ -171,7 +178,9 @@ async def ask_question(request: AskRequest, db: AsyncSession = Depends(get_db)):
         except Exception as e:
             print(f"Error calling Groq API: {e}")
             bot_response_content = "Sorry, an error occurred with the AI model."
+            
     bot_message = Message(chat_id=request.chat_id, role="bot", content=bot_response_content)
     db.add(bot_message)
     await db.commit()
+    
     return {"response": bot_response_content, "context": context, "chat_id": request.chat_id}

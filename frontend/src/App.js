@@ -1,13 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
+import SettingsModal from './components/SettingsModal';
+
 import './App.css';
 import axios from 'axios';
 import { Link, X } from 'lucide-react';
 
 const LinkBubble = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  if (isMobile) return null;
 
   return (
     <div className="fixed bottom-5 right-5 z-50">
@@ -34,11 +49,18 @@ const LinkBubble = () => {
 
 function CAgptApp() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [theme, setTheme] = useState('dark');
   const [selectedChatId, setSelectedChatId] = useState(null);
   const [selectedSubject, setSelectedSubject] = useState('All Subjects');
   const [subjectList, setSubjectList] = useState(['All Subjects']);
   const [chatHistory, setChatHistory] = useState([]);
+
+  useEffect(() => {
+    const body = window.document.body;
+    body.classList.remove('dark', 'light', 'space');
+    body.classList.add(theme);
+  }, [theme]);
 
   const fetchChatHistory = async () => {
     try {
@@ -65,31 +87,8 @@ function CAgptApp() {
   }, []);
 
   const handleToggleSidebar = () => setIsSidebarCollapsed(!isSidebarCollapsed);
-
-  const handleNewChat = () => {
-    setSelectedChatId(null);
-  };
-
-  const handleSelectChat = (chatId) => {
-    setSelectedChatId(chatId);
-  };
-
-  // --- NEW FUNCTION TO HANDLE DELETING A CHAT ---
-  const handleDeleteChat = async (chatIdToDelete) => {
-    try {
-      await axios.delete(`http://127.0.0.1:8000/chats/${chatIdToDelete}`);
-      // Refresh the chat history list after deletion
-      await fetchChatHistory();
-      // If the deleted chat was the one currently selected, clear the view
-      if (selectedChatId === chatIdToDelete) {
-        setSelectedChatId(null);
-      }
-    } catch (error) {
-      console.error("Failed to delete chat:", error);
-    }
-  };
-
-  const handleThemeToggle = (checked) => setIsDarkMode(checked);
+  const handleNewChat = () => setSelectedChatId(null);
+  const handleSelectChat = (chatId) => setSelectedChatId(chatId);
   const handleSubjectFilter = (subject) => setSelectedSubject(subject);
 
   const onNewChatCreated = async (newChatId) => {
@@ -97,43 +96,56 @@ function CAgptApp() {
     setSelectedChatId(newChatId);
   };
 
+  const handleDeleteChat = async (chatIdToDelete) => {
+    try {
+      await axios.delete(`http://127.0.0.1:8000/chats/${chatIdToDelete}`);
+      if (selectedChatId === chatIdToDelete) setSelectedChatId(null);
+      await fetchChatHistory();
+    } catch (error) {
+      console.error("Failed to delete chat:", error);
+    }
+  };
+
+  const handleRenameChat = async (chatId, newTitle) => {
+    try {
+      await axios.patch(`http://127.0.0.1:8000/chats/${chatId}/rename`, { title: newTitle });
+      await fetchChatHistory();
+    } catch (error) {
+      console.error("Failed to rename chat:", error);
+    }
+  };
+
   return (
-    <div className={`h-screen flex overflow-hidden bg-background text-text-primary`}>
+    <div className="h-screen flex overflow-hidden bg-background text-text-primary">
       <Sidebar
         isCollapsed={isSidebarCollapsed}
         onToggle={handleToggleSidebar}
         onNewChat={handleNewChat}
         onSelectChat={handleSelectChat}
-        onDeleteChat={handleDeleteChat} // Pass the delete function
+        onDeleteChat={handleDeleteChat}
+        onRenameChat={handleRenameChat}
         selectedChatId={selectedChatId}
-        isDarkMode={isDarkMode}
-        onThemeToggle={handleThemeToggle}
         onSubjectFilter={handleSubjectFilter}
         selectedSubject={selectedSubject}
         subjectList={subjectList}
         chatHistory={chatHistory}
+        onSettingsClick={() => setIsSettingsOpen(true)}
       />
-      <div className="flex-1 flex flex-col">
-        <ChatInterface
-          currentChatId={selectedChatId}
-          setCurrentChatId={setSelectedChatId}
-          selectedSubject={selectedSubject}
-          onNewChatCreated={onNewChatCreated}
-        />
-      </div>
+      <ChatInterface
+        currentChatId={selectedChatId}
+        setCurrentChatId={setSelectedChatId}
+        selectedSubject={selectedSubject}
+        onNewChatCreated={onNewChatCreated}
+      />
       <LinkBubble />
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        currentTheme={theme}
+        onThemeChange={setTheme}
+      />
     </div>
   );
 }
 
-function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<CAgptApp />} />
-      </Routes>
-    </BrowserRouter>
-  );
-}
-
-export default App;
+export default CAgptApp;

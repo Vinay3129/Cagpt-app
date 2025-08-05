@@ -1,18 +1,18 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: ["class"], // Enable class-based dark mode
   content: [
     "./src/**/*.{js,jsx,ts,tsx}",
-    "./public/index.html"
   ],
   theme: {
     extend: {
       colors: {
-        background: '#18181B', // Dark charcoal gray for main background
-        primary: '#27272A',   // Lighter gray for sidebars, bubbles
-        accent: '#3B82F6',    // Muted blue for buttons, highlights
-        'text-primary': '#F4F4F5', // Light gray for primary text
-        'text-secondary': '#A1A1AA', // Dimmer gray for secondary text
-        border: '#3f3f46',    // Border color
+        border: "hsl(var(--border))",
+        background: "hsl(var(--background))",
+        primary: "hsl(var(--primary))",
+        accent: "hsl(var(--accent))",
+        "text-primary": "hsl(var(--text-primary))",
+        "text-secondary": "hsl(var(--text-secondary))",
       },
     },
   },

@@ -6,7 +6,8 @@ import datetime
 
 DATABASE_URL = "sqlite+aiosqlite:///./cagpt.db"
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+# --- THIS IS THE CORRECTED LINE ---
+engine = create_async_engine(DATABASE_URL) # Removed echo=True for cleaner logs
 
 SessionLocal = sessionmaker(
     autocommit=False, autoflush=False, bind=engine, class_=AsyncSession
@@ -17,6 +18,7 @@ Base = declarative_base()
 class Chat(Base):
     __tablename__ = "chats"
     id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, default="New Chat")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan", lazy="selectin")
 

@@ -46,20 +46,37 @@ const ChatInterface = ({ currentChatId, setCurrentChatId, selectedSubject, onNew
     if (!inputValue.trim() || isLoading) return;
     const userMessageContent = inputValue.trim();
     const isNewChat = !currentChatId;
+    
     const optimisticUserMessage = {
-      id: Date.now(), role: 'user', content: userMessageContent, timestamp: new Date().toISOString()
+      id: Date.now(),
+      role: 'user',
+      content: userMessageContent,
+      timestamp: new Date().toISOString()
     };
+    
+    // Show user's message immediately
     setMessages(prev => [...prev, optimisticUserMessage]);
     setInputValue('');
     setIsLoading(true);
+    
     try {
       const response = await axios.post('http://127.0.0.1:8000/ask/', {
-        q: userMessageContent, chat_id: currentChatId, subject: selectedSubject
+        q: userMessageContent,
+        chat_id: currentChatId,
+        subject: selectedSubject
       });
+      
       const newChatId = response.data.chat_id;
+      
       if (isNewChat) {
+        // Inform app about the new chat
         onNewChatCreated(newChatId);
+        
+        // Immediately fetch messages for the new chat to get bot's reply
+        const messagesResponse = await axios.get(`http://127.0.0.1:8000/chats/${newChatId}/messages`);
+        setMessages(messagesResponse.data);
       } else {
+        // For existing chat, fetch messages to update with bot reply
         const messagesResponse = await axios.get(`http://127.0.0.1:8000/chats/${currentChatId}/messages`);
         setMessages(messagesResponse.data);
       }
@@ -75,12 +92,12 @@ const ChatInterface = ({ currentChatId, setCurrentChatId, selectedSubject, onNew
     setInputValue(e.target.value);
     const textarea = textareaRef.current;
     if (textarea) {
-        textarea.style.height = 'auto';
-        textarea.style.height = `${textarea.scrollHeight}px`;
+      textarea.style.height = 'auto';
+      textarea.style.height = `${textarea.scrollHeight}px`;
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -95,80 +112,79 @@ const ChatInterface = ({ currentChatId, setCurrentChatId, selectedSubject, onNew
 
       <div className="flex-1 flex flex-col items-center overflow-y-auto">
         <div className="w-full max-w-4xl p-6 flex-1 custom-scrollbar">
-            <div className="space-y-6">
+          <div className="space-y-6">
             {messages.length === 0 && !isLoading ? (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="w-16 h-16 bg-accent rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Calculator className="w-8 h-8 text-white" />
-                    </div>
-                    <h3 className="text-xl font-semibold text-text-primary mb-2">CA Study Assistant</h3>
-                    <p className="text-text-secondary mb-6 max-w-md">
-                        Start a conversation by typing below, or use the sidebar to see past chats.
-                    </p>
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <div className="w-16 h-16 bg-accent rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Calculator className="w-8 h-8 text-white" />
                 </div>
+                <h3 className="text-xl font-semibold text-text-primary mb-2">CA Study Assistant</h3>
+                <p className="text-text-secondary mb-6 max-w-md">
+                  Start a conversation by typing below, or use the sidebar to see past chats.
+                </p>
+              </div>
             ) : (
-                messages.map((message) => (
+              messages.map((message) => (
                 <MessageBubble
-                    key={message.id}
-                    message={message}
-                    isUser={message.role === 'user'}
+                  key={message.id}
+                  message={message}
+                  isUser={message.role === 'user'}
                 />
-                ))
+              ))
             )}
             {isLoading && (
-                <div className="flex items-start gap-3">
+              <div className="flex items-start gap-3">
                 <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
-                    <Calculator className="w-4 h-4 text-text-primary animate-pulse" />
+                  <Calculator className="w-4 h-4 text-text-primary animate-pulse" />
                 </div>
                 <div className="p-3 rounded-2xl bg-primary rounded-bl-none">
-                    <div className="text-sm text-text-primary">Thinking...</div>
+                  <div className="text-sm text-text-primary">Thinking...</div>
                 </div>
-                </div>
+              </div>
             )}
             <div ref={messagesEndRef} />
-            </div>
+          </div>
         </div>
         
         <div className="w-full max-w-4xl p-4 shrink-0">
-            <form
-                onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-                className="flex items-end p-2 space-x-2 bg-primary border border-border rounded-2xl"
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+            className="flex items-end p-2 space-x-2 bg-primary border border-border rounded-2xl"
+          >
+            <button
+              type="button"
+              title="Attach file"
+              className="p-2 text-text-secondary hover:text-text-primary transition-colors rounded-full shrink-0"
             >
-                {/* --- THIS IS THE UPDATED SECTION --- */}
-                <button
-                    type="button"
-                    title="Attach file"
-                    className="p-2 text-text-secondary hover:text-text-primary transition-colors rounded-full shrink-0"
-                >
-                    <Plus className="w-4 h-4" />
-                </button>
-                <Textarea
-                    ref={textareaRef}
-                    value={inputValue}
-                    onChange={handleInputChange}
-                    onKeyPress={handleKeyPress}
-                    placeholder="Ask anything..."
-                    className="flex-1 w-full text-text-primary placeholder:text-text-secondary resize-none min-h-[24px] max-h-40 bg-transparent border-none focus:outline-none focus:ring-0"
-                    rows={1}
-                />
-                <button
-                    type="button"
-                    title="Use voice"
-                    className="p-2 text-text-secondary hover:text-text-primary transition-colors rounded-full shrink-0"
-                >
-                    <Mic className="w-4 h-4" />
-                </button>
-                <button
-                    type="submit"
-                    disabled={isLoading || !inputValue.trim()}
-                    className="inline-flex items-center justify-center w-8 h-8 text-white transition-colors rounded-full bg-accent hover:opacity-90 disabled:bg-zinc-600 disabled:cursor-not-allowed shrink-0"
-                >
-                    <Send className="w-4 h-4" />
-                </button>
-            </form>
-            <p className="text-xs text-text-secondary mt-2 text-center">
-                CAgpt can make mistakes. Consider checking important information.
-            </p>
+              <Plus className="w-4 h-4" />
+            </button>
+            <Textarea
+              ref={textareaRef}
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask anything..."
+              className="flex-1 w-full text-text-primary placeholder:text-text-secondary resize-none min-h-[24px] max-h-40 bg-transparent border-none focus:outline-none focus:ring-0"
+              rows={1}
+            />
+            <button
+              type="button"
+              title="Use voice"
+              className="p-2 text-text-secondary hover:text-text-primary transition-colors rounded-full shrink-0"
+            >
+              <Mic className="w-4 h-4" />
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || !inputValue.trim()}
+              className="inline-flex items-center justify-center w-8 h-8 text-white transition-colors rounded-full bg-accent hover:opacity-90 disabled:bg-zinc-600 disabled:cursor-not-allowed shrink-0"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
+          <p className="text-xs text-text-secondary mt-2 text-center">
+            CAgpt can make mistakes. Consider checking important information.
+          </p>
         </div>
       </div>
     </div>

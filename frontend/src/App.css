@@ -1,14 +1,23 @@
 /* Custom scrollbar for our dark theme */
 .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
+  width: 8px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-track {
-    background: #18181B; /* Matches our main background */
+  background: #18181B; /* Matches our main background */
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #3f3f46; /* Matches our border color */
-    border-radius: 4px;
+  background: #3f3f46; /* Matches our border color */
+  border-radius: 4px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #52525b;
+  background: #52525b;
+}
+
+/* Firefox scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 #18181B; /* thumb color | track color */
 }
